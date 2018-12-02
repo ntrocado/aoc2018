@@ -18,7 +18,7 @@
 
 (defun answer-2 ()
   (loop :with results := '(0)
-	:for v :in (circular! (read-input "1-1-input.txt"))
+	:for v :in (circular! (read-input "day01-input.txt"))
 	:for sum := v :then (+ v sum)
 	:when (member sum results)
 	  :return sum
