@@ -17,9 +17,10 @@
   (setf (cdr (last items)) items))
 
 (defun answer-2 ()
-  (loop :with results := '(0)
+  (loop :with results := (make-hash-table)
+	:initially (setf (gethash 0 results) t)
 	:for v :in (circular! (read-input "day01-input.txt"))
 	:for sum := v :then (+ v sum)
-	:when (member sum results)
+	:when (gethash sum results)
 	  :return sum
-	:do (push sum results)))
+	:do (setf (gethash sum results) t)))
