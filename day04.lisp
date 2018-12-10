@@ -109,3 +109,34 @@
 	 (minute (minute-guard-sleeps-the-most (filter-events events guard))))
     (* guard minute)))
 
+;;; Part 2
+
+(defun guards-minutes (events)
+  "Return a hash-table with key->guard id, value->vector of minute frequency."
+  (let ((ht (make-hash-table)))
+    (loop :for event :in events
+	  :for current-id := (if (numberp (second event))
+				 (second event)
+				 current-id)
+	  :for minute-asleep := (if (eql (second event) 'asleep)
+				    (ut->minute (first event))
+				    minute-asleep)
+	  :when (eql (second event) 'wake-up)
+	    :do (unless (gethash current-id ht)
+		  (setf (gethash current-id ht) (make-array 60)))
+	    :and :do (loop :for i :from minute-asleep
+			     :below (ut->minute (first event))
+			   :do (incf (aref (gethash current-id ht) i)))
+	  :finally (return ht))))
+
+(defun max-minute (ht)
+  (loop :for key :being :the :hash-keys :of ht :using (hash-value value)
+	:for maximum := (let* ((times (apply #'max (coerce value 'list)))
+			       (minute (position times (coerce value 'list))))
+			  (if (or (null maximum) (> times (first maximum)))
+			      (list times minute key)
+			      maximum))
+	:finally (return (rest maximum))))
+
+(defun answer-2 ()
+  (apply #'* (max-minute (guards-minutes (parse-input "day04-input.txt")))))
