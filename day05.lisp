@@ -4,20 +4,19 @@
   (with-open-file (data file)
     (read-line data)))
 
-(defun remove-units (str &optional (pointer 0))
-  (let ((a (char str pointer))
-	(b (char str (1+ pointer))))
-    (cond ((= pointer (- (length str) 2)) str)
-	  ((and (char-equal a b)
-		(char/= a b))
-	   (remove-units (concatenate 'string
-				      (subseq str 0 pointer)
-				      (subseq str (+ pointer 2)))
-			 0))
-	  (t (remove-units str (1+ pointer))))))
+(defun remove-units (str)
+  (let ((stack))
+    (loop :for char :across str
+	  :while char
+	  :do (if (and stack
+		       (char-equal char (car stack))
+		       (char/= char (car stack)))
+		(pop stack)
+		(push char stack)))
+    (coerce (nreverse stack) 'string)))
 
 (defun answer-1 ()
-  (length (remove-units (input))))
+  (length (reduce-string (input))))
 
 ;;; Part 2
 
