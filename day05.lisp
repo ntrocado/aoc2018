@@ -18,3 +18,15 @@
 
 (defun answer-1 ()
   (length (remove-units (input))))
+
+;;; Part 2
+
+(defun remove-letter (str letter)
+  (remove letter str :test 'char-equal))
+
+(defun shortest (str)
+  (loop :for ch :from (char-code #\a) :upto (char-code #\z)
+	:minimize (length (remove-units (remove-letter str (code-char ch))))))
+
+(defun answer-2 ()
+  (shortest (input)))
