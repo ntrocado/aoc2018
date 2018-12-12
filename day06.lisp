@@ -75,3 +75,23 @@
 (defun answer-1 ()
   (let ((input (input "day06-input.txt")))
     (find-largest-area (area-sizes input (detect-infinites input)))))
+
+;;; Part 2
+
+(defun manhattan-distance-to-all-coordinates (x y coordinates)
+  (loop :for c :in coordinates
+	:for dx := (abs (- (first c) x))
+	:for dy := (abs (- (second c) y))
+	:sum (+ dx dy)))
+
+(defun within-region-p (x y coordinates &optional (limit 10000))
+  (< (manhattan-distance-to-all-coordinates x y coordinates) limit))
+
+(defun region-size (coordinates &optional (limit 10000))
+  (destructuring-bind (max-x max-y) (max-dimensions coordinates)
+    (loop :for x :upto max-x
+	  :sum (loop :for y :upto max-y
+		     :count (within-region-p x y coordinates limit)))))
+
+(defun answer-2 (&optional (file "day06-input.txt") (limit 10000))
+  (region-size (input file) limit))
