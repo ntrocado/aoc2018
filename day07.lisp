@@ -43,3 +43,45 @@
 (defun answer-1 (&optional (file "day07-input.txt"))
   (do-all (make-prerequisites (parse-input file))))
 
+;;; Part 2
+
+(defstruct worker current-task time-to-go)
+
+(defun letter-time (letter &optional (min 60))
+  (+ min (- (char-code letter) 64)))
+
+(defun no-one-working-p (workers task)
+  (not (some (lambda (x) (eql task
+			      (worker-current-task x)))
+	     workers)))
+
+(defun next-available (prerequisites workers)
+  (find-if (lambda (x) (no-one-working-p workers x))
+	   (available prerequisites)))
+
+(defun do-all-with-workers (prerequisites)
+  (let ((workers
+	  (make-array 5 :element-type 'worker
+			:initial-contents (loop :repeat 5
+						:collect (make-worker
+							  :time-to-go 0)))))
+    (loop :with step := prerequisites
+	  :for second :from 0
+	  :do (loop :for w :across workers
+		    :do (if (zerop (worker-time-to-go w))
+			    (progn
+			      (when (worker-current-task w)
+				(complete-step (worker-current-task w) step)
+				(setf (worker-current-task w) nil))
+			      (let ((next-letter (next-available step workers)))
+				(when next-letter
+				  (setf (worker-current-task w) next-letter)
+				  (setf (worker-time-to-go w)
+					(1- (letter-time next-letter 60))))))
+			    (decf (worker-time-to-go w))))
+	  :maximize second
+	  :until (every (lambda (x) (null (worker-current-task x)))
+			workers))))
+
+(defun answer-2 (&optional (file "day07-input.txt"))
+  (do-all-with-workers (make-prerequisites (parse-input file))))
