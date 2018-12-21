@@ -38,3 +38,8 @@
 (defun answer-1 ()
   (game 418 71339))
 
+;;; Part 2
+
+(defun answer-2 ()
+  (game 418 (* 71339 100)))
+
