@@ -1,31 +1,40 @@
 ;;; Part 1
 
-(defun insert-after (item pos list)
-  (append (subseq list 0 (1+ pos)) (list item) (subseq list (1+ pos))))
+(defstruct node val previous next)
 
-(defun remove-pos (pos list)
-  (remove-if (constantly t) list :start pos :count 1))
+(defun insert-after (node new-node)
+  (setf (node-next new-node) (node-next node)
+	(node-previous new-node) node
+	(node-previous (node-next node)) new-node
+	(node-next node) new-node)
+  new-node)
+
+(defun remove-node (node)
+  (setf (node-next (node-previous node)) (node-next node)
+	(node-previous (node-next node)) (node-previous node))
+  (node-next node))
+
+(defun make-initial-node (val)
+  (let ((initial-node (make-node :val val)))
+    (setf (node-previous initial-node) initial-node
+	  (node-next initial-node) initial-node)
+    initial-node))
 
 (defun game (players last-marble)
   (loop :with score := (make-hash-table :size players)
 	:for player := -1 :then (mod (1+ player) players)
 	:for marble :from 0 :upto last-marble
-	:for circle := '(0)
+	:for current-node := (make-initial-node 0)
 	  :then (if (integerp (/ marble 23))
-		    (let ((counter-clockwise (mod (- current 7)
-						  (length circle))))
+		    (progn
+		      (loop :repeat 7
+			    :do (setf current-node (node-previous current-node)))
 		      (incf (gethash player score 0)
-			    (+ marble (elt circle counter-clockwise)))
-		      (remove-pos counter-clockwise circle))
-		    (insert-after marble
-				  (mod (1+ current) (length circle))
-				  circle))
-	:for current := 0
-	  :then (if (integerp (/ marble 23))
-		    (mod (- current 7) (1+ (length circle)))
-		    (mod (1+ (mod (1+ current) (1- (length circle))))
-			 (length circle)))
+			    (+ marble (node-val current-node)))
+		      (remove-node current-node))
+		    (insert-after (node-next current-node) (make-node :val marble)))
 	:maximize (gethash player score 0)))
 
 (defun answer-1 ()
   (game 418 71339))
+
