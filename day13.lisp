@@ -91,11 +91,15 @@
   cart)
 
 (defun update-all-carts (carts track)
-  (loop :for cart :in carts
+  (loop :with crashed
+	:for cart :in carts
 	:collect (update-cart cart track) :into results
-	:when (detect-crash carts) :append :it :into crashed
-	  :do (when (detect-crash carts)
-		(format t "~%crash at pos ~a" (cart-pos (first (detect-crash carts)))))
+	:do (let ((crash (detect-crash carts)))
+	      (when crash
+		(mapc (lambda (x)
+			(push x crashed)
+			(format t "~%cart crashed at pos ~a" (cart-pos x)))
+		      crash)))
 	:finally (return (remove-if (lambda (x) (member x crashed)) results))))
 
 (defun sort-carts (carts)
