@@ -11,22 +11,20 @@
 (defparameter *elf-attack-power* 3)
 
 (defclass unit ()
-  ((alive :initform t)
+  ((alive :initform t) ; unnecessary
    (pos :initarg :pos
 	:initform (error "Pos must be initialized when creating unit.")
-	:accessor pos)))
+	:accessor pos)
+   (attack-power :initarg :attack-power
+		 :reader attack-power)))
 
 (defclass elf (unit)
   ((hp :initform *elf-hit-points*
-       :accessor hp)
-   (attack-power :initform *elf-attack-power*
-		 :reader attack-power)))
+       :accessor hp)))
 
 (defclass goblin (unit)
   ((hp :initform *goblin-hit-points*
-       :accessor hp)
-   (attack-power :initform *goblin-attack-power*
-		 :reader attack-power)))
+       :accessor hp)))
 
 (defclass battle ()
   ((input :initarg :input
@@ -36,7 +34,13 @@
    (y :initarg :y
       :initform 32)
    (cave :accessor cave)
-   (units :accessor units)))
+   (units :accessor units)
+   (elf-attack-power :initarg :elf-attack-power
+		     :initform *elf-attack-power*
+		     :reader elf-attack-power)
+   (goblin-attack-power :initarg :goblin-attack-power
+			:initform *goblin-attack-power*
+			:reader goblin-attack-power)))
 
 (defmethod army ((unit unit))
   (class-name (class-of unit)))
@@ -50,17 +54,19 @@
 							 'list)))))
 
 (defmethod all-units-in-map ((battle battle))
-  (with-accessors ((cave cave))
-      battle
-    (destructuring-bind (n m)
-	(array-dimensions (cave battle))
-      (loop :for i :below n
-	    :append (loop :for j :below m
-			  :for square := (aref cave i j)
-			  :when (char= square +elf+)
-			    :collect (make-instance 'elf :pos (list i j))
-			  :when (char= square +goblin+)
-			    :collect (make-instance 'goblin :pos (list i j)))))))
+  (destructuring-bind (n m)
+      (array-dimensions (cave battle))
+    (loop :for i :below n
+	  :append (loop :for j :below m
+			:for square := (aref (cave battle) i j)
+			:when (char= square +elf+)
+			  :collect (make-instance 'elf
+						  :pos (list i j)
+						  :attack-power (elf-attack-power battle))
+			:when (char= square +goblin+)
+			  :collect (make-instance 'goblin
+						  :pos (list i j)
+						  :attack-power (goblin-attack-power battle))))))
 
 (defmethod initialize-instance :after ((battle battle) &key)
   (with-slots (input x y) battle
@@ -93,15 +99,17 @@
 	    (car (pos unit)) (cadr (pos unit))
 	    (hp unit))))
 
-(defmethod update-cave-map ((battle battle))
-  (with-accessors (cave units) battle
-    ()))
+;; (defmethod update-cave-map ((battle battle))
+;;   (with-accessors (cave units) battle
+;;     ()))
 
 (defmethod remove-unit ((unit unit) (battle battle))
   (setf (units battle) (delete unit (units battle)))
   (destructuring-bind (x y)
       (pos unit)
-    (setf (aref (cave battle) x y) +cavern+)))
+    (setf (aref (cave battle) x y) +cavern+))
+  (when (eql (army unit) 'elf)
+    'elf-died))
 
 (defun wall-p (cave x y)
   (char= (aref cave x y) #\#))
@@ -151,33 +159,18 @@
     (loop :for i :from (caar path-nodes) :downto 0
 	  :for current := origin
 	    :then (first (sort (copy-seq (mapcar #'rest
-						 (remove-if-not (lambda (x)
-								  (member (rest x)
-									  (adjacent-pos (first current)
-											(second current))
-									  :test 'equal))
-								(remove-if-not (lambda (x)
-										 (= (first x) i))
-									       path-nodes))))
+						 (remove-if-not
+						  (lambda (x)
+						    (member (rest x)
+							    (adjacent-pos (first current)
+									  (second current))
+							    :test 'equal))
+						  (remove-if-not
+						   (lambda (x)
+						     (= (first x) i))
+						   path-nodes))))
 			       #'reading-order))
 	  :collect current)))
-
-(defun old-possible-paths (cave origin destination)
-  (loop :for i :from 0 :upto (apply #'max (array-dimensions cave))
-	:for queue := (list (push i destination)) ;TODO Em vez de lista, hash-table
-	  :then (loop :with new-queue := queue
-		      :for square :in queue
-		      :for adjacent := (remove-if (lambda (x)
-						    (find x new-queue :key (lambda (x) (subseq x 1)) :test 'equal))
-						  (adjacent-open-squares cave (second square) (third square)))
-		      :when (member origin (adjacent-pos (second square)
-							 (third square))
-				    :test 'equal)
-			:return (push (push i origin) new-queue)
-		      :do (mapc (lambda (x) (push (push i x) new-queue)) adjacent)
-		      :finally (return new-queue))
-	:when (member origin queue :test 'equal)
-	  :return queue))
 
 (defun possible-paths (cave origin destination)
   (loop :with ht := (make-hash-table :test 'equal)
@@ -213,11 +206,12 @@
   (+ (abs (- x2 x1))
      (abs (- y2 y1))))
 
-(defun closer (unit squares-in-range)
-  (first (stable-sort (sort (copy-seq squares-in-range) #'reading-order)
-		      #'< :key (lambda (square)
-				 (manhattan-distance (first (pos unit)) (second (pos unit))
-						     (first square) (second square))))))
+(defun closer (unit squares-in-range cave)
+  (first (stable-sort (sort (copy-seq squares-in-range)
+			    #'reading-order)
+		      #'<
+		      :key (lambda (x)
+			     (length (shortest-path cave (pos unit) x))))))
 
 (defmethod move ((unit unit) (battle battle))
   (update-square battle (pos unit) +cavern+)
@@ -227,7 +221,8 @@
 			    (closer unit
 				    (reachable unit
 					       (squares-in-range unit battle)
-					       (cave battle))))))
+					       (cave battle))
+				    (cave battle)))))
     (setf (pos unit) (second path)))
   (update-square battle (pos unit) (ecase (army unit)
 				     (elf +elf+)
@@ -251,33 +246,53 @@
     (when (not (plusp (hp target)))
       (remove-unit target battle))))
 
-(defun unit-in-range-of-a-target-p 
-  (not (null (adjacent-targets unit battle))))
-
-(defmethod turn ((unit unit) (battle battle))
+(defun turn (unit battle &key (part-2 nil))
   (when (member unit (units battle))
     (if (all-possible-targets unit battle)
 	(progn
 	  (unless (adjacent-targets unit battle)
 	    (move unit battle))
-	  (attack unit battle))
+	  (let ((attack-result (attack unit battle)))
+	    (when (and part-2 (eql attack-result 'elf-died)) 'combat-ended)))
 	'combat-ended)))
 
 (defmethod sort-units ((battle battle))
   (setf (units battle) (sort (units battle) #'reading-order :key #'pos)))
 
-(defmethod one-round ((battle battle))
+(defun one-round (battle &key (part-2 nil))
   (loop :for unit :in (sort-units battle)
-	:when (eql (turn unit battle) 'combat-ended)
+	:when (eql (turn unit battle :part-2 part-2) 'combat-ended)
 	  :return 'combat-ended))
 
-(defun combat (&optional (battle *battle*) (test nil))
-  (loop :for i :from 1
-	:for round := (one-round battle)
+(defun combat (battle &key (test nil) (part-2 nil))
+  (loop :initially (when test (print battle))
+	:for i :from 1
+	:for round := (one-round battle :part-2 part-2)
 	:when test
 	  :do (format t "~&after round ~a~%~a~%~a~%" i battle (units battle))
-	:when (zerop (mod i 10)) :do (format t ".")
+	:when (zerop (mod i 10)) :do (progn (format t ".") (force-output))
 	:until (eql round 'combat-ended)
-	:finally (return (format t "Combat ends after ~a full rounds, with ~a hit points left.~%Outcome: ~a"
-				 (1- i) (reduce #'+ (mapcar #'hp (units battle)))
-				 (* (1- i) (reduce #'+ (mapcar #'hp (units battle))))))))
+	:finally (return (values battle (1- i)))))
+
+(defun answer-1 ()
+  (multiple-value-bind (battle full-rounds)
+      (combat *battle*)
+    (let ((hp-left (reduce #'+ (mapcar #'hp (units battle)))))
+      (format t "Combat ends after ~a full rounds, with ~a hit points left.~%Outcome: ~a"
+	      full-rounds hp-left (* full-rounds hp-left)))))
+
+(defun answer-2 (&key (test nil))
+  (loop :for ap :from 4
+	:for (battle full-rounds)
+	  := (multiple-value-list (combat (make-instance 'battle
+							 :input #p"day15-input.txt"
+							 :elf-attack-power ap)
+					  :test nil
+					  :part-2 t))
+	:when test
+	  :do (print ap)
+	:until (notany (lambda (x) (eql (army x) 'goblin))
+		       (units battle))
+	:finally (return (let ((hp-left (reduce #'+ (mapcar #'hp (units battle)))))
+			   (format t "Combat ends after ~a full rounds, with ~a hit points left.~%Outcome: ~a"
+				   full-rounds hp-left (* full-rounds hp-left))))))
