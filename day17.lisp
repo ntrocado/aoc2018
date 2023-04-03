@@ -19,19 +19,15 @@
 	:do (loop :for y :in (getf coord :y)
 		  :do (setf (aref map x y) char))))
 
-(defun find-max (&optional (file #p"day17-input.txt"))
-  (apply #'max
-	 (mapcar #'parse-integer
-		 (ppcre:all-matches-as-strings "\\d+"
-					       (uiop:read-file-string file)))))
-
 (defun read-input (&optional (file #p"day17-input.txt"))
   (let ((map (make-array '(2000 2000) :initial-element #\.)))
-    (mapcar (lambda (line)
-	      (set-map (parse-line line) #\# map))
-	    (uiop:read-file-lines file))
-    (setf (aref map 500 0) #\+)
-    map))
+    (loop :initially (setf (aref map 500 0) #\+)
+	  :for line :in (uiop:read-file-lines file)
+	  :for coord := (parse-line line)
+	  :do (set-map coord #\# map)
+	  :minimize (apply #'min (getf coord :y)) :into min-y
+	  :maximize (apply #'max (getf coord :y)) :into max-y
+	  :finally (return (values map min-y max-y)))))
 
 (defun print-map (map &optional
 			(x1 0)
@@ -45,54 +41,79 @@
 
 ;;; (print-map (read-input #p"day17-test.txt") 494 507 0 14)
 
-(defun sand-p (map x y)
-  (char= #\. (aref map x y)))
+(defun down-possible-p (map x y)
+  (member (aref map x (1+ y))
+	  '(#\. #\|)
+	  :test #'char=))
 
-(defun next (map water-x water-y)
-  (unless (aref map water-x (1+ water-y))
-   (if (sand-p map water-x (1+ water-y))
-       ;; if down is sand make it new water
-       (progn (setf (aref map water-x (1+ water-y)) #\|)
-	      (values map water-x (1+ water-y)))
-       ;; else, if it can't go further down...
-       ;; fill horizontally
-       (let (new-water-x)
-	 (setf (aref map water-x water-y) #\~)
-	 (loop :for left :from (1- water-x) :downto 0
-	       :while (and (sand-p map left water-y)
-			   (not (sand-p map left (1+ water-y))))
-	       :do (setf (aref map left water-y) #\~)
-	       :finally (when (sand-p map left water-y)
-			  (setf (aref map left water-y) #\|)
-			  (push left new-water-x)))
-	 (loop :for right :from (1+ water-x) :upto (second (array-dimensions map))
-	       :while (and (sand-p map right water-y)
-			   (not (sand-p map right (1+ water-y))))
-	       :do (setf (aref map right water-y) #\~)
-	       :finally (when (sand-p map right water-y)
-			  (setf (aref map right water-y) #\|)
-			  (push right new-water-x)))
-	 (values map (or new-water-x water-x) (if new-water-x
-						  (make-list (length new-water-x)
-							     :initial-element water-y)
-						  (1- water-y)))))))
+(defun down! (map x y)
+  (setf (aref map x y) #\|)
+  (list x (1+ y)))
 
-(defun run (map x y)
-  (unless (>= y (find-max))
-    (multiple-value-bind (new-map water-x water-y)
-	(next map x y)
-      (if (atom water-x)
-	  (run new-map water-x water-y)
-	  (mapc (lambda (x y)
-		  (run new-map x y))
-		water-x water-y)))))
+(defun pool-p (map x y)
+  (and (loop :for left from x :downto 0
+	     :never (down-possible-p map left y)
+	     :thereis (char= (aref map left y) #\#))
+       (loop :for right :from x :upto (first (array-dimensions map))
+	     :never (down-possible-p map right y)
+	     :thereis (char= (aref map right y) #\#))))
 
-(defun answer-1 (&optional (file #p"day17-input.txt"))
-  (let ((map (read-input file)))
-    (run map 500 0)
-    (print-map map 470 530 0 (find-max file))
-    (destructuring-bind (n m)
-	(array-dimensions map)
-      (loop :for i :from 0 :below n
-	    :sum (loop :for j :from 0 :below m
-		       :count (find (aref map i j) "+|~"))))))
+(defun not-wall-p (map x y)
+  (not (char= (aref map x y) #\#)))
+
+(defun pool! (map x y)
+  (loop :for left :from x :downto 0
+	:while (not-wall-p map left y)
+	:do (setf (aref map left y) #\~))
+  (loop :for right :from x :upto (first (array-dimensions map))
+	:while (not-wall-p map right y)
+	:do (setf (aref map right y) #\~))
+  (list x (1- y)))
+
+(defun sideways! (map x y)
+  (remove nil (list
+	       (loop :for left :from x :downto 0
+		     :while (not-wall-p map left y)
+		     :do (setf (aref map left y) #\|)
+		     :when (down-possible-p map left y)
+		       :return (list left y))
+	       (loop :for right :from x :upto (first (array-dimensions map))
+		     :while (not-wall-p map right y)
+		     :do (setf (aref map right y) #\|)
+		     :when (down-possible-p map right y)
+		       :return (list right y)))))
+
+(defun ensure-pos-list (l)
+  (if (listp (car l))
+      l
+      (list l)))
+
+(defun turn (map pos-list)
+  (loop :for (x y) :in pos-list
+	:append
+	(ensure-pos-list
+	 (cond ((down-possible-p map x y) (down! map x y))
+	       ((pool-p map x y) (pool! map x y))
+	       (t (sideways! map x y))))))
+
+(defun count-water (map min-y max-y &optional (chars "|~"))
+  (loop :for i :from 0 :below (array-dimension map 0)
+	:sum (loop :for j :from min-y :upto max-y
+		   :count (find (aref map i j) chars))))
+
+(defun answers ()
+  (multiple-value-bind (map min-y max-y)
+      (read-input #p"day17-input.txt")
+    (loop :for i :from 1
+	  :for pos-list := '((500 0))
+	    :then (remove-if (lambda (pos)
+			       (> (second pos) max-y))
+			     (remove-duplicates (turn map pos-list) :test #'equal))
+	  :while (some (lambda (pos)
+			 (<= (second pos) max-y))
+		       pos-list)
+	  ;; :do (format t "~%Turn: ~a. Pos: ~a.~%" i pos-list)
+	  ;; :do (print-map map 450 550 0 100)
+	  ;; :do (break)
+	  :finally (return (values (count-water map min-y max-y)
+				   (count-water map min-y max-y "~"))))))
